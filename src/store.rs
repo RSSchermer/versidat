@@ -1,67 +1,285 @@
-use std::sync::{Arc, RwLock};
-use std::marker;
 use std::cell::Cell;
-use crate::on_version_change::VersionChangeBroadcaster;
+use std::marker;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, RwLock, Weak};
+use std::task::{Context, Poll, Waker};
 
-struct VersionProvider {
-    next: u64
+use futures::Stream;
+
+use crate::broadcast::{Broadcaster, Listener};
+use crate::TypeConstructor;
+
+struct Shared<C>
+where
+    C: TypeConstructor,
+{
+    data: <C as TypeConstructor>::Type<'static>,
+    update_context_provider: UpdateContextProvider,
 }
 
-impl VersionProvider {
-    fn next(&mut self) -> u64 {
-        let next = self.next;
+struct Lock<C>
+where
+    C: TypeConstructor,
+{
+    shared: RwLock<Shared<C>>,
+}
 
-        self.next += 1;
-
-        next
+impl<C> Lock<C>
+where
+    C: TypeConstructor,
+{
+    fn with<F, R>(&self, f: F) -> R
+    where
+        F: for<'store> FnOnce(&<C as TypeConstructor>::Type<'store>, ReadContext<'store>) -> R,
+    {
+        let lock = self.shared.read().expect("poisoned");
+        todo!()
+        // unsafe {
+        //     f(
+        //         ::std::mem::transmute::<&<C as TypeConstructor>::Type<'static>, _>(&lock.data),
+        //         ReadContext::new(),
+        //     )
+        // }
     }
 }
 
-struct StoreState<T> {
-    data: T,
-    version_provider: VersionProvider
+pub struct Store<C>
+where
+    C: TypeConstructor,
+{
+    lock: Arc<Lock<C>>,
+    update_broadcaster: UpdateBroadcaster,
 }
 
-pub struct UpdateContext<'store, 'context> {
-    version_provider: &'context mut VersionProvider,
-    _scope_marker: marker::PhantomData<Cell<&'store ()>>,
-}
+impl<C> Store<C>
+where
+    C: TypeConstructor,
+{
+    pub fn initialize<F>(initializer: F) -> Self
+    where
+        F: for<'store> FnOnce(UpdateContext<'store>) -> <C as TypeConstructor>::Type<'store>,
+    {
+        let mut update_context_provider = UpdateContextProvider::new();
 
-impl<'store, 'context> UpdateContext<'store, 'context> {
-    fn new(version_provider: &'context mut VersionProvider) -> Self {
-        UpdateContext {
-            version_provider,
-            _scope_marker: marker::PhantomData
-        }
-    }
+        let data = unsafe { initializer(update_context_provider.update_context()) };
 
-    pub(crate) fn next_version(&self) -> u64 {
-        self.version_provider.next()
-    }
-}
-
-pub struct Store<T, R, E> {
-    pub(crate) data: Arc<RwLock<StoreState<T>>>,
-    reductor: R,
-    _event_marker: marker::PhantomData<*const E>
-}
-
-impl<T, R, E> Store<T, R, E> where R: Fn(E, &mut T) {
-    pub fn new<F>(initializer: F, reductor: R) -> Self where F: for<'store> FnOnce(UpdateContext<'store>) -> T<'store> {
-        let context = UpdateContext {
-            _scope_marker: marker::PhantomData
+        let shared = Shared {
+            data,
+            update_context_provider,
         };
 
         Store {
-            data: Arc::new(RwLock::new(initializer(context))),
-            reductor,
-            _event_marker: marker::PhantomData
+            lock: Arc::new(Lock {
+                shared: RwLock::new(shared),
+            }),
+            update_broadcaster: UpdateBroadcaster::new(),
+        }
+    }
+
+    pub fn id(&self) -> u64 {
+        todo!()
+    }
+
+    pub fn with<F, R>(&self, f: F) -> R
+    where
+        F: for<'store> FnOnce(&<C as TypeConstructor>::Type<'store>, ReadContext<'store>) -> R,
+    {
+        self.lock.with(f)
+    }
+
+    pub fn update<F>(&self, f: F)
+    where
+        F: for<'store> FnOnce(&<C as TypeConstructor>::Type<'store>, UpdateContext<'store>),
+    {
+        let mut lock = self.lock.shared.write().expect("poisoned");
+
+        let Shared {
+            data,
+            update_context_provider,
+        } = &mut *lock;
+
+        let result = unsafe {
+            f(
+                ::std::mem::transmute::<&mut <C as TypeConstructor>::Type<'static>, _>(data),
+                update_context_provider.update_context(),
+            );
+        };
+
+        self.update_broadcaster.broadcast();
+
+        result
+    }
+
+    pub fn on_update(&self) -> OnUpdate {
+        self.update_broadcaster.listener()
+    }
+}
+
+impl<C> Clone for Store<C>
+where
+    C: TypeConstructor,
+{
+    fn clone(&self) -> Self {
+        Store {
+            lock: self.lock.clone(),
+            update_broadcaster: self.update_broadcaster.clone(),
         }
     }
 }
 
-macro_rules! define_store {
-    ($store:ident, $root:ident) => {
+struct Waiter {
+    terminated: bool,
+    waker: Option<Waker>,
+}
 
+#[derive(Clone)]
+struct UpdateBroadcaster {
+    inner: Arc<Broadcaster<Mutex<Waiter>>>,
+}
+
+impl UpdateBroadcaster {
+    fn new() -> Self {
+        UpdateBroadcaster {
+            inner: Arc::new(Broadcaster::new()),
+        }
+    }
+
+    fn broadcast(&self) {
+        self.inner.broadcast(|waiter| {
+            let mut waiter = waiter.lock().unwrap();
+
+            if let Some(waker) = waiter.waker.take() {
+                waker.wake();
+            }
+        })
+    }
+
+    fn listener(&self) -> OnUpdate {
+        OnUpdate {
+            broadcaster: Arc::downgrade(&self.inner),
+            listener: None,
+        }
+    }
+}
+
+impl Drop for UpdateBroadcaster {
+    fn drop(&mut self) {
+        self.inner.broadcast(|waiter| {
+            if let Ok(mut waiter) = waiter.lock() {
+                waiter.terminated = true;
+
+                if let Some(waker) = waiter.waker.take() {
+                    waker.wake();
+                }
+            }
+        })
+    }
+}
+
+pub struct OnUpdate {
+    broadcaster: Weak<Broadcaster<Mutex<Waiter>>>,
+    listener: Option<Listener<Mutex<Waiter>>>,
+}
+
+impl Stream for OnUpdate {
+    type Item = ();
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match &mut self.listener {
+            None => {
+                // Initialize if the broad caster is still alive, or terminate immediately
+                if let Some(broadcaster) = self.broadcaster.upgrade() {
+                    self.listener = Some(broadcaster.listener(Mutex::new(Waiter {
+                        terminated: false,
+                        waker: Some(cx.waker().clone()),
+                    })));
+
+                    Poll::Pending
+                } else {
+                    Poll::Ready(None)
+                }
+            }
+            Some(listener) => {
+                let mut waiter = listener.lock().unwrap();
+
+                if waiter.terminated {
+                    Poll::Ready(None)
+                } else {
+                    waiter.waker = Some(cx.waker().clone());
+
+                    Poll::Ready(Some(()))
+                }
+            }
+        }
+    }
+}
+
+impl Clone for OnUpdate {
+    fn clone(&self) -> Self {
+        OnUpdate {
+            broadcaster: self.broadcaster.clone(),
+            listener: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct ReadContext<'store> {
+    store_id: u64,
+    _scope_marker: marker::PhantomData<Cell<&'store ()>>,
+}
+
+impl<'store> ReadContext<'store> {
+    unsafe fn new(store_id: u64) -> ReadContext<'store> {
+        ReadContext {
+            store_id,
+            _scope_marker: marker::PhantomData,
+        }
+    }
+
+    pub fn store_id(&self) -> u64 {
+        self.store_id
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct UpdateContext<'store> {
+    // Opting to use a raw pointer here rather than a reference or cell, so the context can by Copy.
+    next_version: *mut u64,
+    _scope_marker: marker::PhantomData<Cell<&'store ()>>,
+}
+
+impl UpdateContext<'_> {
+    pub(crate) fn next_version(&self) -> u64 {
+        // SAFETY: there is only ever a single update scope, and though there can be many
+        // `UpdateContext`s within that scope (it implements `Copy`), `next_version` can never be
+        // called concurrently
+        unsafe {
+            let next_version = *self.next_version;
+
+            *self.next_version = next_version + 1;
+
+            next_version
+        }
+    }
+}
+
+#[doc(hidden)]
+struct UpdateContextProvider {
+    next_version: u64,
+}
+
+impl UpdateContextProvider {
+    #[doc(hidden)]
+    fn new() -> Self {
+        UpdateContextProvider { next_version: 0 }
+    }
+
+    #[doc(hidden)]
+    unsafe fn update_context<'store>(&mut self) -> UpdateContext<'store> {
+        UpdateContext {
+            next_version: &mut self.next_version as *mut u64,
+            _scope_marker: marker::PhantomData,
+        }
     }
 }

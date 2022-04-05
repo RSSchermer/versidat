@@ -2,7 +2,7 @@ use std::cell::{Cell, UnsafeCell};
 use std::ops::{Deref, DerefMut};
 use std::{fmt, marker};
 
-use crate::context::{ReadContext, UpdateContext};
+use crate::store::{ReadContext, UpdateContext};
 
 // We basically reimplement RefCell, but as a type that is allowed to be Send and Sync. The store
 // allows multiple "read" scopes to be alive across different threads, but only allows a single
