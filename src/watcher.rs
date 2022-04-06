@@ -82,7 +82,7 @@ where
 {
     pub fn with<F, O>(&self, f: F) -> O
     where
-        F: for<'store> FnOnce(&R::Value<'store>, ReadContext<'store>) -> O,
+        F: for<'a, 'store> FnOnce(R::Value<'a, 'store>, ReadContext<'store>) -> O,
     {
         self.store
             .with(|root, cx| f(self.resolver.select(root, cx), cx))
@@ -183,7 +183,7 @@ where
 {
     pub fn with<F, O>(&self, f: F) -> O
     where
-        F: for<'store> FnOnce((&R0::Value<'store>, &R1::Value<'store>), ReadContext<'store>) -> O,
+        F: for<'a, 'store> FnOnce((R0::Value<'a, 'store>, R1::Value<'a, 'store>), ReadContext<'store>) -> O,
     {
         self.store.with(|root, cx| {
             let resolver_0 = self.resolver_0.select(root, cx);

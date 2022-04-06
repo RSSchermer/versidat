@@ -46,7 +46,7 @@ where
         + Clone,
 {
     type RootTC = C;
-    type Value<'store> = VersionedCell<'store, N::Type<'store>>;
+    type Value<'a, 'store: 'a> = &'a VersionedCell<'store, N::Type<'store>>;
     type ValueResolver = NodeSelector<N, C, S>;
 
     fn store_id(&self) -> usize {
@@ -57,7 +57,7 @@ where
         &mut self,
         root: &'a C::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<&'a Self::Value<'store>> {
+    ) -> Refresh<Self::Value<'a, 'store>> {
         let cell = (self.select)(root, cx);
         let version = cell.version();
         let last_version = self.last_version;
@@ -96,13 +96,13 @@ where
     ) -> &'a VersionedCell<'store, N::Type<'store>>,
 {
     type RootTC = C;
-    type Value<'store> = VersionedCell<'store, N::Type<'store>>;
+    type Value<'a, 'store: 'a> = &'a VersionedCell<'store, N::Type<'store>>;
 
     fn select<'a, 'store>(
         &self,
         root: &'a C::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> &'a Self::Value<'store> {
+    ) -> Self::Value<'a, 'store> {
         (self.lens)(root, cx)
     }
 }

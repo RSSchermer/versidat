@@ -1,26 +1,27 @@
+use std::sync::atomic::AtomicU64;
 use std::marker;
-
-use crate::memo::{Memo, Refresh, ValueResolver};
+use crate::TypeConstructor;
 use crate::store::{ReadContext, Store};
 use crate::versioned_cell::VersionedCell;
-use crate::TypeConstructor;
+use crate::memo::{Memo, Refresh, ValueResolver};
+use std::sync::atomic;
 
-pub struct CellMemo<C, S> {
+pub struct OptionCellMemo<C, S> {
     select: S,
     store_id: usize,
-    last_version: u64,
+    last_version: Option<u64>,
     _marker: marker::PhantomData<*const C>,
 }
 
-impl<C, S, T: 'static> CellMemo<C, S>
-where
-    C: TypeConstructor,
-    S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> &'a VersionedCell<'store, T>,
+impl<C, S, T: 'static> OptionCellMemo<C, S>
+    where
+        C: TypeConstructor,
+        S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> Option<&'a VersionedCell<'store, T>>,
 {
     pub fn new(store: &Store<C>, select: S) -> Self {
-        let last_version = store.with(|root, cx| select(root, cx).version());
+        let last_version = store.with(|root, cx| select(root, cx).map(|c| c.version()));
 
-        CellMemo {
+        OptionCellMemo {
             select,
             store_id: store.id(),
             last_version,
@@ -29,15 +30,15 @@ where
     }
 }
 
-impl<C, S, T: 'static> Memo for CellMemo<C, S>
-where
-    C: TypeConstructor,
-    S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> &'a VersionedCell<'store, T>
+impl<C, S, T: 'static> Memo for OptionCellMemo<C, S>
+    where
+        C: TypeConstructor,
+        S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> Option<&'a VersionedCell<'store, T>>
         + Clone,
 {
     type RootTC = C;
-    type Value<'a, 'store: 'a> = &'a VersionedCell<'store, T>;
-    type ValueResolver = CellResolver<C, S>;
+    type Value<'a, 'store: 'a> = Option<&'a VersionedCell<'store, T>>;
+    type ValueResolver = OptionCellResolver<C, S>;
 
     fn store_id(&self) -> usize {
         self.store_id
@@ -49,7 +50,7 @@ where
         cx: ReadContext<'store>,
     ) -> Refresh<Self::Value<'a, 'store>> {
         let cell = (self.select)(root, cx);
-        let version = cell.version();
+        let version = cell.map(|c| c.version());
         let last_version = self.last_version;
 
         self.last_version = version;
@@ -62,25 +63,25 @@ where
     }
 
     fn value_resolver(&self) -> Self::ValueResolver {
-        CellResolver {
+        OptionCellResolver {
             lens: self.select.clone(),
             _marker: marker::PhantomData,
         }
     }
 }
 
-pub struct CellResolver<C, S> {
+pub struct OptionCellResolver<C, S> {
     lens: S,
     _marker: marker::PhantomData<*const C>,
 }
 
-impl<C, S, T: 'static> ValueResolver for CellResolver<C, S>
-where
-    C: TypeConstructor,
-    S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> &'a VersionedCell<'store, T>,
+impl<C, S, T: 'static> ValueResolver for OptionCellResolver<C, S>
+    where
+        C: TypeConstructor,
+        S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> Option<&'a VersionedCell<'store, T>>,
 {
     type RootTC = C;
-    type Value<'a, 'store: 'a> = &'a VersionedCell<'store, T>;
+    type Value<'a, 'store: 'a> = Option<&'a VersionedCell<'store, T>>;
 
     fn select<'a, 'store>(
         &self,

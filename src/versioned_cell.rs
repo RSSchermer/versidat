@@ -34,7 +34,7 @@ impl fmt::Display for BorrowMutError {
     }
 }
 
-pub struct VersionedCell<'store, T: ?Sized> {
+pub struct VersionedCell<'store, T: 'store + ?Sized> {
     // Note: don't need atomics to track the version or borrow flag, as they can only change inside
     // an update scope, which guarantees there are never sync issues.
     version: UnsafeCell<u64>,

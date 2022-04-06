@@ -33,12 +33,9 @@ impl<T> Deref for Refresh<T> {
 pub trait Memo {
     type RootTC: TypeConstructor;
 
-    type Value<'store>;
+    type Value<'a, 'store: 'a>;
 
-    type ValueResolver: for<'store> ValueResolver<
-        RootTC = Self::RootTC,
-        Value<'store> = Self::Value<'store>,
-    >;
+    type ValueResolver: ValueResolver;
 
     fn store_id(&self) -> usize;
 
@@ -46,13 +43,13 @@ pub trait Memo {
         &mut self,
         root: &'a <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<&'a Self::Value<'store>>;
+    ) -> Refresh<Self::Value<'a, 'store>>;
 
     fn refresh<'a, 'store>(
         &mut self,
         root: &'a <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<&'a Self::Value<'store>> {
+    ) -> Refresh<Self::Value<'a, 'store>> {
         if self.store_id() != cx.store_id() {
             panic!(
                 "memo is associated with a different store than the read context that was passed"
