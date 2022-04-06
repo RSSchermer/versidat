@@ -1,14 +1,14 @@
-use crate::TypeConstructor;
 use crate::store::ReadContext;
+use crate::TypeConstructor;
 
-pub trait Selector {
+pub trait ValueResolver {
     type RootTC: TypeConstructor;
 
-    type Target<'store>;
+    type Value<'store>;
 
     fn select<'a, 'store>(
         &self,
         root: &'a <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> &'a Self::Target<'store>;
+    ) -> &'a Self::Value<'store>;
 }

@@ -5,7 +5,7 @@ mod broadcast;
 mod type_constructor;
 pub use self::type_constructor::TypeConstructor;
 
+pub mod memo;
 pub mod store;
 pub mod versioned_cell;
-pub mod memo;
 pub mod watcher;

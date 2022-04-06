@@ -1,8 +1,8 @@
 use std::ops::Deref;
 
-use crate::TypeConstructor;
-use crate::memo::Selector;
+use crate::memo::ValueResolver;
 use crate::store::ReadContext;
+use crate::TypeConstructor;
 
 pub enum Refresh<T> {
     Unchanged(T),
@@ -33,15 +33,34 @@ impl<T> Deref for Refresh<T> {
 pub trait Memo {
     type RootTC: TypeConstructor;
 
-    type Target<'store>;
+    type Value<'store>;
 
-    type Selector: for<'store> Selector<RootTC = Self::RootTC, Target<'store> = Self::Target<'store>>;
+    type ValueResolver: for<'store> ValueResolver<
+        RootTC = Self::RootTC,
+        Value<'store> = Self::Value<'store>,
+    >;
+
+    fn store_id(&self) -> usize;
+
+    fn refresh_unchecked<'a, 'store>(
+        &mut self,
+        root: &'a <Self::RootTC as TypeConstructor>::Type<'store>,
+        cx: ReadContext<'store>,
+    ) -> Refresh<&'a Self::Value<'store>>;
 
     fn refresh<'a, 'store>(
         &mut self,
         root: &'a <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<&'a Self::Target<'store>>;
+    ) -> Refresh<&'a Self::Value<'store>> {
+        if self.store_id() != cx.store_id() {
+            panic!(
+                "memo is associated with a different store than the read context that was passed"
+            );
+        }
 
-    fn selector(&self) -> Self::Selector;
+        self.refresh_unchecked(root, cx)
+    }
+
+    fn value_resolver(&self) -> Self::ValueResolver;
 }

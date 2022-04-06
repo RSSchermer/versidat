@@ -3,25 +3,43 @@ use std::task::{Context, Poll};
 
 use futures::Stream;
 
+use crate::memo::{Memo, ValueResolver};
+use crate::store::{OnUpdate, ReadContext, Store};
 use crate::TypeConstructor;
-use crate::store::{Store, OnUpdate, ReadContext};
-use crate::memo::{Memo, Selector};
 
 pub struct Watcher<C, M>
-    where
-        C: TypeConstructor,
+where
+    C: TypeConstructor,
 {
     store: Store<C>,
     memo: M,
     on_update: OnUpdate,
 }
 
-impl<C, M> Stream for Watcher<C, M>
-    where
-        C: TypeConstructor,
-        M: Memo<RootTC = C>,
+impl<C, M> Watcher<C, M>
+where
+    C: TypeConstructor,
+    M: Memo<RootTC = C>,
 {
-    type Item = View<C, M::Selector>;
+    pub fn new(store: &Store<C>, memo: M) -> Self {
+        if memo.store_id() != store.id() {
+            panic!("memo is not associated with the store passed to the watcher")
+        }
+
+        Watcher {
+            on_update: store.on_update(),
+            memo,
+            store: store.clone(),
+        }
+    }
+}
+
+impl<C, M> Stream for Watcher<C, M>
+where
+    C: TypeConstructor,
+    M: Memo<RootTC = C>,
+{
+    type Item = View<C, M::ValueResolver>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let Watcher {
@@ -37,7 +55,7 @@ impl<C, M> Stream for Watcher<C, M>
                 if changed {
                     Poll::Ready(Some(View {
                         store: store.clone(),
-                        selector: memo.selector(),
+                        resolver: memo.value_resolver(),
                     }))
                 } else {
                     Poll::Pending
@@ -50,29 +68,30 @@ impl<C, M> Stream for Watcher<C, M>
 }
 
 pub struct View<C, S>
-    where
-        C: TypeConstructor,
+where
+    C: TypeConstructor,
 {
     store: Store<C>,
-    selector: S,
+    resolver: S,
 }
 
-impl<C, S> View<C, S>
-    where
-        C: TypeConstructor,
-        S: Selector<RootTC = C>,
+impl<C, R> View<C, R>
+where
+    C: TypeConstructor,
+    R: ValueResolver<RootTC = C>,
 {
-    pub fn with<F, R>(&self, f: F) -> R
-        where
-            F: for<'store> FnOnce(&S::Target<'store>, ReadContext<'store>) -> R,
+    pub fn with<F, O>(&self, f: F) -> O
+    where
+        F: for<'store> FnOnce(&R::Value<'store>, ReadContext<'store>) -> O,
     {
-        self.store.with(|root, cx| f(self.selector.select(root, cx), cx))
+        self.store
+            .with(|root, cx| f(self.resolver.select(root, cx), cx))
     }
 }
 
 pub struct Watcher2<C, M0, M1>
-    where
-        C: TypeConstructor,
+where
+    C: TypeConstructor,
 {
     store: Store<C>,
     memo_0: M0,
@@ -81,29 +100,36 @@ pub struct Watcher2<C, M0, M1>
 }
 
 impl<C, M0, M1> Watcher2<C, M0, M1>
-    where
-        C: TypeConstructor,
-        M0: Memo<RootTC = C>,
-        M1: Memo<RootTC = C>,
+where
+    C: TypeConstructor,
+    M0: Memo<RootTC = C>,
+    M1: Memo<RootTC = C>,
 {
     pub fn new(store: &Store<C>, memo_0: M0, memo_1: M1) -> Self {
+        if memo_0.store_id() != store.id() {
+            panic!("memo `0` is not associated with the store passed to this watcher");
+        }
+
+        if memo_1.store_id() != store.id() {
+            panic!("memo `1` is not associated with the store passed to this watcher");
+        }
+
         Watcher2 {
             on_update: store.on_update(),
             store: store.clone(),
             memo_0,
             memo_1,
-
         }
     }
 }
 
 impl<C, M0, M1> Stream for Watcher2<C, M0, M1>
-    where
-        C: TypeConstructor,
-        M0: Memo<RootTC = C>,
-        M1: Memo<RootTC = C>,
+where
+    C: TypeConstructor,
+    M0: Memo<RootTC = C>,
+    M1: Memo<RootTC = C>,
 {
-    type Item = View2<C, M0::Selector, M1::Selector>;
+    type Item = View2<C, M0::ValueResolver, M1::ValueResolver>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let Watcher2 {
@@ -118,8 +144,8 @@ impl<C, M0, M1> Stream for Watcher2<C, M0, M1>
                 let changed = store.with(|root, cx| {
                     let mut changed = false;
 
-                    changed |= memo_0.refresh(root, cx).is_changed();
-                    changed |= memo_1.refresh(root, cx).is_changed();
+                    changed |= memo_0.refresh_unchecked(root, cx).is_changed();
+                    changed |= memo_1.refresh_unchecked(root, cx).is_changed();
 
                     changed
                 });
@@ -127,8 +153,8 @@ impl<C, M0, M1> Stream for Watcher2<C, M0, M1>
                 if changed {
                     Poll::Ready(Some(View2 {
                         store: store.clone(),
-                        selector_0: memo_0.selector(),
-                        selector_1: memo_1.selector(),
+                        resolver_0: memo_0.value_resolver(),
+                        resolver_1: memo_1.value_resolver(),
                     }))
                 } else {
                     Poll::Pending
@@ -140,30 +166,30 @@ impl<C, M0, M1> Stream for Watcher2<C, M0, M1>
     }
 }
 
-pub struct View2<C, S0, S1>
-    where
-        C: TypeConstructor,
+pub struct View2<C, R0, R1>
+where
+    C: TypeConstructor,
 {
     store: Store<C>,
-    selector_0: S0,
-    selector_1: S1,
+    resolver_0: R0,
+    resolver_1: R1,
 }
 
-impl<C, M0, M1> View2<C, M0, M1>
-    where
-        C: TypeConstructor,
-        M0: Selector<RootTC = C>,
-        M1: Selector<RootTC = C>,
+impl<C, R0, R1> View2<C, R0, R1>
+where
+    C: TypeConstructor,
+    R0: ValueResolver<RootTC = C>,
+    R1: ValueResolver<RootTC = C>,
 {
-    pub fn with<F, R>(&self, f: F) -> R
-        where
-            F: for<'store> FnOnce((&M0::Target<'store>, &M1::Target<'store>), ReadContext<'store>) -> R,
+    pub fn with<F, O>(&self, f: F) -> O
+    where
+        F: for<'store> FnOnce((&R0::Value<'store>, &R1::Value<'store>), ReadContext<'store>) -> O,
     {
         self.store.with(|root, cx| {
-            let selector_0 = self.selector_0.select(root, cx);
-            let selector_1 = self.selector_1.select(root, cx);
+            let resolver_0 = self.resolver_0.select(root, cx);
+            let resolver_1 = self.resolver_1.select(root, cx);
 
-            f((selector_0, selector_1), cx)
+            f((resolver_0, resolver_1), cx)
         })
     }
 }

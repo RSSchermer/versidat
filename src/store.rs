@@ -4,10 +4,16 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::task::{Context, Poll, Waker};
 
+use atomic_counter::{AtomicCounter, RelaxedCounter};
 use futures::Stream;
+use lazy_static::lazy_static;
 
 use crate::broadcast::{Broadcaster, Listener};
 use crate::TypeConstructor;
+
+lazy_static! {
+    static ref STORE_ID_PROVIDER: RelaxedCounter = RelaxedCounter::new(0);
+}
 
 struct Shared<C>
 where
@@ -22,6 +28,7 @@ where
     C: TypeConstructor,
 {
     shared: RwLock<Shared<C>>,
+    store_id: usize,
 }
 
 impl<C> Lock<C>
@@ -33,13 +40,13 @@ where
         F: for<'store> FnOnce(&<C as TypeConstructor>::Type<'store>, ReadContext<'store>) -> R,
     {
         let lock = self.shared.read().expect("poisoned");
-        todo!()
-        // unsafe {
-        //     f(
-        //         ::std::mem::transmute::<&<C as TypeConstructor>::Type<'static>, _>(&lock.data),
-        //         ReadContext::new(),
-        //     )
-        // }
+
+        unsafe {
+            f(
+                ::std::mem::transmute::<&<C as TypeConstructor>::Type<'static>, _>(&lock.data),
+                ReadContext::new(self.store_id),
+            )
+        }
     }
 }
 
@@ -68,21 +75,24 @@ where
             update_context_provider,
         };
 
+        let store_id = STORE_ID_PROVIDER.inc();
+
         Store {
             lock: Arc::new(Lock {
                 shared: RwLock::new(shared),
+                store_id,
             }),
             update_broadcaster: UpdateBroadcaster::new(),
         }
     }
 
-    pub fn id(&self) -> u64 {
-        todo!()
+    pub fn id(&self) -> usize {
+        self.lock.store_id
     }
 
-    pub fn with<F, R>(&self, f: F) -> R
+    pub fn with<F, O>(&self, f: F) -> O
     where
-        F: for<'store> FnOnce(&<C as TypeConstructor>::Type<'store>, ReadContext<'store>) -> R,
+        F: for<'store> FnOnce(&<C as TypeConstructor>::Type<'store>, ReadContext<'store>) -> O,
     {
         self.lock.with(f)
     }
@@ -225,19 +235,19 @@ impl Clone for OnUpdate {
 
 #[derive(Clone, Copy)]
 pub struct ReadContext<'store> {
-    store_id: u64,
+    store_id: usize,
     _scope_marker: marker::PhantomData<Cell<&'store ()>>,
 }
 
 impl<'store> ReadContext<'store> {
-    unsafe fn new(store_id: u64) -> ReadContext<'store> {
+    unsafe fn new(store_id: usize) -> ReadContext<'store> {
         ReadContext {
             store_id,
             _scope_marker: marker::PhantomData,
         }
     }
 
-    pub fn store_id(&self) -> u64 {
+    pub fn store_id(&self) -> usize {
         self.store_id
     }
 }
