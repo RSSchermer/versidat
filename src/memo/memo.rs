@@ -33,15 +33,15 @@ impl<T> Deref for Refresh<T> {
 pub trait Memo {
     type RootTC: TypeConstructor;
 
-    type Target<'store>;
+    type Target<'a, 'store: 'a>;
 
-    type Selector: for<'store> Selector<RootTC = Self::RootTC, Target<'store> = Self::Target<'store>>;
+    type Selector: Selector;
 
-    fn refresh<'a, 'store>(
+    fn refresh<'a, 'store: 'a>(
         &mut self,
         root: &'a <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<&'a Self::Target<'store>>;
+    ) -> Refresh<Self::Target<'a, 'store>>;
 
     fn selector(&self) -> Self::Selector;
 }

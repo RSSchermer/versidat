@@ -64,7 +64,7 @@ impl<C, S> View<C, S>
 {
     pub fn with<F, R>(&self, f: F) -> R
         where
-            F: for<'store> FnOnce(&S::Target<'store>, ReadContext<'store>) -> R,
+            F: for<'a, 'store> FnOnce(S::Target<'a, 'store>, ReadContext<'store>) -> R,
     {
         self.store.with(|root, cx| f(self.selector.select(root, cx), cx))
     }
@@ -157,7 +157,7 @@ impl<C, M0, M1> View2<C, M0, M1>
 {
     pub fn with<F, R>(&self, f: F) -> R
         where
-            F: for<'store> FnOnce((&M0::Target<'store>, &M1::Target<'store>), ReadContext<'store>) -> R,
+            F: for<'a, 'store> FnOnce((M0::Target<'a, 'store>, M1::Target<'a, 'store>), ReadContext<'store>) -> R,
     {
         self.store.with(|root, cx| {
             let selector_0 = self.selector_0.select(root, cx);

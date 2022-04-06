@@ -42,14 +42,14 @@ impl<N, C, S> Memo for NodeMemo<N, C, S>
         + Clone,
 {
     type RootTC = C;
-    type Target<'store> = VersionedCell<'store, N::Type<'store>>;
+    type Target<'a, 'store: 'a> = &'a VersionedCell<'store, N::Type<'store>>;
     type Selector = NodeSelector<N, C, S>;
 
-    fn refresh<'a, 'store>(
+    fn refresh<'a, 'store: 'a>(
         &mut self,
         root: &'a C::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<&'a Self::Target<'store>> {
+    ) -> Refresh<Self::Target<'a, 'store>> {
         if cx.store_id() != self.store_id {
             panic!("cannot resolve selector against different store")
         }
@@ -89,13 +89,13 @@ impl<N, C, S> Selector for NodeSelector<N, C, S>
         S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> &'a VersionedCell<'store, N::Type<'store>>,
 {
     type RootTC = C;
-    type Target<'store> = VersionedCell<'store, N::Type<'store>>;
+    type Target<'a, 'store: 'a> = &'a VersionedCell<'store, N::Type<'store>>;
 
-    fn select<'a, 'store>(
+    fn select<'a, 'store: 'a>(
         &self,
         root: &'a C::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> &'a Self::Target<'store> {
+    ) -> Self::Target<'a, 'store> {
         (self.lens)(root, cx)
     }
 }

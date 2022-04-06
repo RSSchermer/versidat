@@ -30,21 +30,21 @@ impl<C, S, T> CellMemo<C, S>
     }
 }
 
-impl<C, S, T> Memo for CellMemo<C, S>
+impl<C, S, T: 'static> Memo for CellMemo<C, S>
     where
         C: TypeConstructor,
         S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> &'a VersionedCell<'store, T>
         + Clone,
 {
     type RootTC = C;
-    type Target<'store> = VersionedCell<'store, T>;
+    type Target<'a, 'store: 'a> = &'a VersionedCell<'store, T>;
     type Selector = CellSelector<C, S>;
 
-    fn refresh<'a, 'store>(
+    fn refresh<'a, 'store: 'a>(
         &mut self,
         root: &'a C::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<&'a Self::Target<'store>> {
+    ) -> Refresh<Self::Target<'a, 'store>> {
         if cx.store_id() != self.store_id {
             panic!("cannot resolve selector against different store")
         }
@@ -75,19 +75,19 @@ pub struct CellSelector<C, S> {
     _marker: marker::PhantomData<*const C>,
 }
 
-impl<C, S, T> Selector for CellSelector<C, S>
+impl<C, S, T: 'static> Selector for CellSelector<C, S>
     where
         C: TypeConstructor,
         S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> &'a VersionedCell<'store, T>,
 {
     type RootTC = C;
-    type Target<'store> = VersionedCell<'store, T>;
+    type Target<'a, 'store: 'a> = &'a VersionedCell<'store, T>;
 
-    fn select<'a, 'store>(
+    fn select<'a, 'store: 'a>(
         &self,
         root: &'a C::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> &'a Self::Target<'store> {
+    ) -> Self::Target<'a, 'store> {
         (self.lens)(root, cx)
     }
 }

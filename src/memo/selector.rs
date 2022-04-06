@@ -4,11 +4,11 @@ use crate::store::ReadContext;
 pub trait Selector {
     type RootTC: TypeConstructor;
 
-    type Target<'store>;
+    type Target<'a, 'store: 'a>;
 
-    fn select<'a, 'store>(
+    fn select<'a, 'store: 'a>(
         &self,
         root: &'a <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> &'a Self::Target<'store>;
+    ) -> Self::Target<'a, 'store>;
 }

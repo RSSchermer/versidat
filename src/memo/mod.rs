@@ -6,6 +6,7 @@ pub use self::selector::*;
 
 pub mod cell;
 pub mod node;
+pub mod owned;
 
 fn test() {
     use futures::StreamExt;
