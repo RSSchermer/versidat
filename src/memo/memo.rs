@@ -1,55 +1,29 @@
-use std::ops::Deref;
-
-use crate::memo::ValueResolver;
 use crate::store::ReadContext;
 use crate::TypeConstructor;
 
-pub enum Refresh<T> {
-    Unchanged(T),
-    Changed(T),
-}
-
-impl<T> Refresh<T> {
-    pub fn is_changed(&self) -> bool {
-        if let Refresh::Changed(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-}
-
-impl<T> Deref for Refresh<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Refresh::Unchanged(s) => s,
-            Refresh::Changed(s) => s,
-        }
-    }
+pub struct Refresh<T> {
+    pub value: T,
+    pub is_changed: bool
 }
 
 pub trait Memo {
     type RootTC: TypeConstructor;
 
-    type Value<'a, 'store: 'a>;
-
-    type ValueResolver: ValueResolver;
+    type Value<'a, 'b, 'store: 'b> where Self: 'a;
 
     fn store_id(&self) -> usize;
 
-    fn refresh_unchecked<'a, 'store>(
-        &mut self,
-        root: &'a <Self::RootTC as TypeConstructor>::Type<'store>,
+    fn refresh_unchecked<'a, 'b, 'store>(
+        &'a mut self,
+        root: &'b <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<Self::Value<'a, 'store>>;
+    ) -> Refresh<Self::Value<'a, 'b, 'store>>;
 
-    fn refresh<'a, 'store>(
-        &mut self,
-        root: &'a <Self::RootTC as TypeConstructor>::Type<'store>,
+    fn refresh<'a, 'b, 'store>(
+        &'a mut self,
+        root: &'b <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<Self::Value<'a, 'store>> {
+    ) -> Refresh<Self::Value<'a, 'b, 'store>> {
         if self.store_id() != cx.store_id() {
             panic!(
                 "memo is associated with a different store than the read context that was passed"
@@ -58,6 +32,4 @@ pub trait Memo {
 
         self.refresh_unchecked(root, cx)
     }
-
-    fn value_resolver(&self) -> Self::ValueResolver;
 }
