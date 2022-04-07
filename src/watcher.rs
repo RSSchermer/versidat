@@ -85,7 +85,7 @@ where
         F: for<'a, 'store> FnOnce(R::Value<'a, 'store>, ReadContext<'store>) -> O,
     {
         self.store
-            .with(|root, cx| f(self.resolver.select(root, cx), cx))
+            .with(|root, cx| f(self.resolver.resolve(root, cx), cx))
     }
 }
 
@@ -186,8 +186,8 @@ where
         F: for<'a, 'store> FnOnce((R0::Value<'a, 'store>, R1::Value<'a, 'store>), ReadContext<'store>) -> O,
     {
         self.store.with(|root, cx| {
-            let resolver_0 = self.resolver_0.select(root, cx);
-            let resolver_1 = self.resolver_1.select(root, cx);
+            let resolver_0 = self.resolver_0.resolve(root, cx);
+            let resolver_1 = self.resolver_1.resolve(root, cx);
 
             f((resolver_0, resolver_1), cx)
         })

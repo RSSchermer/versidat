@@ -98,7 +98,7 @@ where
     type RootTC = C;
     type Value<'a, 'store: 'a> = &'a VersionedCell<'store, N::Type<'store>>;
 
-    fn select<'a, 'store>(
+    fn resolve<'a, 'store: 'a>(
         &self,
         root: &'a C::Type<'store>,
         cx: ReadContext<'store>,

@@ -1,5 +1,7 @@
 #![feature(generic_associated_types)]
 
+use viemo::memo::Memo;
+
 fn main() {
     use futures::StreamExt;
 
@@ -42,15 +44,29 @@ fn main() {
         elements: vec![],
     });
 
-    let cell_memo = CellMemo::new(&store, |root, cx| &root.element);
-    let node_memo = NodeMemo::<NodeElementTC, _, _>::new(&store, |root, cx| &root.node_element);
+    let mut cell_memo = CellMemo::new(&store, |root, cx| &root.element);
+    let mut node_memo = NodeMemo::<NodeElementTC, _, _>::new(&store, |root, cx| &root.node_element);
+    //
+    // let mut watcher = Watcher2::new(&store, cell_memo, node_memo);
 
-    let mut watcher = Watcher2::new(&store, cell_memo, node_memo);
+    // let render = async move {
+    //     while let Some(view) = watcher.next().await {
+    //         view.with(|(cell, node), cx| {
+    //             println!("{} {}", cell.deref(cx).a, node.deref(cx).b);
+    //         })
+    //     }
+    // };
+    let mut on_update = store.on_update();
 
     let render = async move {
-        while let Some(view) = watcher.next().await {
-            view.with(|(cell, node), cx| {
-                println!("{} {}", cell.deref(cx).a, node.deref(cx).b);
+        while let Some(_) = on_update.next().await {
+            store.with(|root, cx| {
+                let cell = cell_memo.refresh(root, cx);
+                let node = node_memo.refresh(root, cx);
+
+                if cell.is_changed() || node.is_changed() {
+                    println!("{} {}", cell.deref(cx).a, node.deref(cx).b);
+                }
             })
         }
     };

@@ -83,7 +83,7 @@ impl<C, S, T: 'static> ValueResolver for OptionCellResolver<C, S>
     type RootTC = C;
     type Value<'a, 'store: 'a> = Option<&'a VersionedCell<'store, T>>;
 
-    fn select<'a, 'store>(
+    fn resolve<'a, 'store: 'a>(
         &self,
         root: &'a C::Type<'store>,
         cx: ReadContext<'store>,
