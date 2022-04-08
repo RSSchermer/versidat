@@ -5,38 +5,37 @@ use crate::store::{ReadContext, Store};
 use crate::versioned_cell::VersionedCell;
 use crate::TypeConstructor;
 
-pub struct CellMemo<C, S> {
+pub struct OwnedMemo<C, S, T> {
     selector: S,
     store_id: usize,
-    last_version: u64,
+    last_value: T,
     _marker: marker::PhantomData<*const C>,
 }
 
-impl<C, S, T: 'static> CellMemo<C, S>
+impl<C, S, T: PartialEq + 'static> OwnedMemo<C, S, T>
 where
     C: TypeConstructor,
-    S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> &'a VersionedCell<'store, T>,
+    S: for<'store> Fn(&C::Type<'store>, ReadContext<'store>) -> T,
 {
     pub fn new(store: &Store<C>, selector: S) -> Self {
-        let last_version = store.with(|root, cx| selector(root, cx).version());
+        let last_value = store.with(|root, cx| selector(root, cx));
 
-        CellMemo {
+        OwnedMemo {
             selector,
             store_id: store.id(),
-            last_version,
+            last_value,
             _marker: marker::PhantomData,
         }
     }
 }
 
-impl<C, S, T: 'static> Memo for CellMemo<C, S>
+impl<C, S, T: PartialEq + 'static> Memo for OwnedMemo<C, S, T>
 where
     C: TypeConstructor + 'static,
-    S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> &'a VersionedCell<'store, T>
-        + 'static,
+    S: for<'store> Fn(&C::Type<'store>, ReadContext<'store>) -> T + 'static,
 {
     type RootTC = C;
-    type Value<'a, 'b, 'store: 'b> = &'b VersionedCell<'store, T>;
+    type Value<'a, 'b, 'store: 'b> = &'a T;
 
     fn store_id(&self) -> usize {
         self.store_id
@@ -47,15 +46,15 @@ where
         root: &'b C::Type<'store>,
         cx: ReadContext<'store>,
     ) -> Refresh<Self::Value<'a, 'b, 'store>> {
-        let cell = (self.selector)(root, cx);
-        let version = cell.version();
-        let last_version = self.last_version;
+        let value = (self.selector)(root, cx);
 
-        self.last_version = version;
+        let is_changed = value == self.last_value;
+
+        self.last_value = value;
 
         Refresh {
-            value: cell,
-            is_changed: version == last_version,
+            is_changed,
+            value: &self.last_value,
         }
     }
 }

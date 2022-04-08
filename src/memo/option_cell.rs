@@ -1,9 +1,9 @@
 use std::marker;
 
-use crate::TypeConstructor;
+use crate::memo::{Memo, Refresh};
 use crate::store::{ReadContext, Store};
 use crate::versioned_cell::VersionedCell;
-use crate::memo::{Memo, Refresh};
+use crate::TypeConstructor;
 
 pub struct OptionCellMemo<C, S> {
     selector: S,
@@ -13,9 +13,12 @@ pub struct OptionCellMemo<C, S> {
 }
 
 impl<C, S, T: 'static> OptionCellMemo<C, S>
-    where
-        C: TypeConstructor,
-        S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> Option<&'a VersionedCell<'store, T>>,
+where
+    C: TypeConstructor,
+    S: for<'a, 'store> Fn(
+        &'a C::Type<'store>,
+        ReadContext<'store>,
+    ) -> Option<&'a VersionedCell<'store, T>>,
 {
     pub fn new(store: &Store<C>, selector: S) -> Self {
         let last_version = store.with(|root, cx| selector(root, cx).map(|c| c.version()));
@@ -30,9 +33,12 @@ impl<C, S, T: 'static> OptionCellMemo<C, S>
 }
 
 impl<C, S, T: 'static> Memo for OptionCellMemo<C, S>
-    where
-        C: TypeConstructor + 'static,
-        S: for<'a, 'store> Fn(&'a C::Type<'store>, ReadContext<'store>) -> Option<&'a VersionedCell<'store, T>>
+where
+    C: TypeConstructor + 'static,
+    S: for<'a, 'store> Fn(
+            &'a C::Type<'store>,
+            ReadContext<'store>,
+        ) -> Option<&'a VersionedCell<'store, T>>
         + 'static,
 {
     type RootTC = C;
@@ -42,7 +48,7 @@ impl<C, S, T: 'static> Memo for OptionCellMemo<C, S>
         self.store_id
     }
 
-    fn refresh_unchecked<'a, 'b, 'store>(
+    fn refresh_unchecked<'a, 'b, 'store: 'b>(
         &'a mut self,
         root: &'b C::Type<'store>,
         cx: ReadContext<'store>,
@@ -55,7 +61,7 @@ impl<C, S, T: 'static> Memo for OptionCellMemo<C, S>
 
         Refresh {
             value: cell,
-            is_changed: version == last_version
+            is_changed: version == last_version,
         }
     }
 }

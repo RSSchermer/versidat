@@ -3,23 +3,25 @@ use crate::TypeConstructor;
 
 pub struct Refresh<T> {
     pub value: T,
-    pub is_changed: bool
+    pub is_changed: bool,
 }
 
 pub trait Memo {
     type RootTC: TypeConstructor;
 
-    type Value<'a, 'b, 'store: 'b> where Self: 'a;
+    type Value<'a, 'b, 'store: 'b>
+    where
+        Self: 'a;
 
     fn store_id(&self) -> usize;
 
-    fn refresh_unchecked<'a, 'b, 'store>(
+    fn refresh_unchecked<'a, 'b, 'store: 'b>(
         &'a mut self,
         root: &'b <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
     ) -> Refresh<Self::Value<'a, 'b, 'store>>;
 
-    fn refresh<'a, 'b, 'store>(
+    fn refresh<'a, 'b, 'store: 'b>(
         &'a mut self,
         root: &'b <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
