@@ -1,17 +1,17 @@
 #![feature(generic_associated_types)]
 
 use std::ops::Deref;
-use viemo::memo::{CellIterMemo, Memo, OptionCellMemo, OptionNodeMemo, OwnedMemo, CellSliceMemo};
+// use viemo::memo::{CellIterMemo, Memo, OptionCellMemo, OptionNodeMemo, OwnedMemo, CellSliceMemo};
 use viemo::watcher::Watcher;
 
 fn main() {
     use futures::StreamExt;
 
     use viemo::gen_type_constructor;
-    use viemo::memo::{CellMemo, NodeMemo};
+    use viemo::memo::{CellMemo};
     use viemo::store::Store;
     use viemo::versioned_cell::VersionedCell;
-    use viemo::watcher::Watcher2;
+    use viemo::watcher::Watcher;
 
     struct MyRoot<'store> {
         element: VersionedCell<'store, Element>,
@@ -49,12 +49,22 @@ fn main() {
     });
 
     let mut cell_memo = CellMemo::new(&store, |root, _| &root.element);
-    let mut option_cell_memo = OptionCellMemo::new(&store, |root, _| root.elements.get(0));
-    let mut cell_slice = CellSliceMemo::new(&store, |root, _| &root.elements);
-    let mut node_memo = NodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| &root.node_element);
-    let mut option_node_memo =
-        OptionNodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| root.node_elements.get(0));
-    let mut owned_memo = OwnedMemo::new(&store, |root, cx| root.element.deref(cx).a);
+    // let mut option_cell_memo = OptionCellMemo::new(&store, |root, _| root.elements.get(0));
+    // let mut cell_slice = CellSliceMemo::new(&store, |root, _| &root.elements);
+    // let mut node_memo = NodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| &root.node_element);
+    // let mut option_node_memo =
+    //     OptionNodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| root.node_elements.get(0));
+    // let mut owned_memo = OwnedMemo::new(&store, |root, cx| root.element.deref(cx).a);
+
+    let mut watcher = Watcher::new(&store, cell_memo, |cell, cx| {
+        println!("{}", cell.deref(cx).a);
+    });
+
+    let render = async move {
+        while let Some(_) = watcher.next().await {
+
+        }
+    };
 
     // let mut iter_memo = CellIterMemo::new(&store, |root: &MyRoot, cx| root.elements.iter());
     //

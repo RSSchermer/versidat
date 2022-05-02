@@ -6,12 +6,19 @@ pub struct Refresh<T> {
     pub is_changed: bool,
 }
 
-pub trait Memo {
-    type RootTC: TypeConstructor;
+mod sealed {
+    pub trait Sealed: Sized {}
+    pub struct Bounds<T>(T);
+    impl<T> Sealed for Bounds<T> {}
+}
+use sealed::{Bounds, Sealed};
 
-    type Value<'a, 'b, 'store: 'b>
-    where
-        Self: 'a;
+pub trait MemoLifetime<'a, 'b, 'store, ImplicitBounds: Sealed = Bounds<&'b &'store ()>> {
+    type Value;
+}
+
+pub trait Memo: for<'a, 'b, 'store> MemoLifetime<'a, 'b, 'store> {
+    type RootTC: TypeConstructor;
 
     fn store_id(&self) -> usize;
 
@@ -19,13 +26,13 @@ pub trait Memo {
         &'a mut self,
         root: &'b <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<Self::Value<'a, 'b, 'store>>;
+    ) -> Refresh<<Self as MemoLifetime<'a, 'b, 'store>>::Value>;
 
     fn refresh<'a, 'b, 'store: 'b>(
         &'a mut self,
         root: &'b <Self::RootTC as TypeConstructor>::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<Self::Value<'a, 'b, 'store>> {
+    ) -> Refresh<<Self as MemoLifetime<'a, 'b, 'store>>::Value> {
         if self.store_id() != cx.store_id() {
             panic!(
                 "memo is associated with a different store than the read context that was passed"
