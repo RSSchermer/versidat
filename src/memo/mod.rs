@@ -1,6 +1,9 @@
 mod cell;
 pub use self::cell::*;
 
+mod cell_slice;
+pub use self::cell_slice::*;
+
 mod iter;
 pub use self::iter::*;
 

@@ -1,7 +1,7 @@
 #![feature(generic_associated_types)]
 
 use std::ops::Deref;
-use viemo::memo::{CellIterMemo, Memo, OptionCellMemo, OptionNodeMemo, OwnedMemo};
+use viemo::memo::{CellIterMemo, Memo, OptionCellMemo, OptionNodeMemo, OwnedMemo, CellSliceMemo};
 use viemo::watcher::Watcher;
 
 fn main() {
@@ -50,6 +50,7 @@ fn main() {
 
     let mut cell_memo = CellMemo::new(&store, |root, _| &root.element);
     let mut option_cell_memo = OptionCellMemo::new(&store, |root, _| root.elements.get(0));
+    let mut cell_slice = CellSliceMemo::new(&store, |root, _| &root.elements);
     let mut node_memo = NodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| &root.node_element);
     let mut option_node_memo =
         OptionNodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| root.node_elements.get(0));
