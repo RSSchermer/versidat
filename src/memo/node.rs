@@ -1,6 +1,6 @@
 use std::marker;
 
-use crate::memo::{Memo, Refresh};
+use crate::memo::{Memo, MemoLifetime, Refresh};
 use crate::store::{ReadContext, Store};
 use crate::versioned_cell::VersionedCell;
 use crate::TypeConstructor;
@@ -33,6 +33,16 @@ where
     }
 }
 
+impl<'a, 'b, 'store, N, C, S> MemoLifetime<'a, 'b, 'store> for NodeMemo<N, C, S>
+where
+    N: TypeConstructor + 'static,
+    C: TypeConstructor + 'static,
+    S: Fn(&'b C::Type<'store>, ReadContext<'store>) -> &'b VersionedCell<'store, N::Type<'store>>
+        + 'static,
+{
+    type Value = &'b VersionedCell<'store, N::Type<'store>>;
+}
+
 impl<N, C, S> Memo for NodeMemo<N, C, S>
 where
     N: TypeConstructor + 'static,
@@ -44,7 +54,6 @@ where
         + 'static,
 {
     type RootTC = C;
-    type Value<'a, 'b, 'store: 'b> = &'b VersionedCell<'store, N::Type<'store>>;
 
     fn store_id(&self) -> usize {
         self.store_id
@@ -54,7 +63,7 @@ where
         &'a mut self,
         root: &'b C::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<Self::Value<'a, 'b, 'store>> {
+    ) -> Refresh<<Self as MemoLifetime<'a, 'b, 'store>>::Value> {
         let cell = (self.selector)(root, cx);
         let version = cell.version();
         let last_version = self.last_version;

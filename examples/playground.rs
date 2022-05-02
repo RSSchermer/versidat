@@ -2,13 +2,14 @@
 
 use std::ops::Deref;
 // use viemo::memo::{CellIterMemo, Memo, OptionCellMemo, OptionNodeMemo, OwnedMemo, CellSliceMemo};
-use viemo::watcher::Watcher;
+use viemo::memo::{CellSliceMemo, NodeMemo, OptionCellMemo, OptionNodeMemo, OwnedMemo};
+use viemo::watcher::{Watcher, Watcher2};
 
 fn main() {
     use futures::StreamExt;
 
     use viemo::gen_type_constructor;
-    use viemo::memo::{CellMemo};
+    use viemo::memo::CellMemo;
     use viemo::store::Store;
     use viemo::versioned_cell::VersionedCell;
     use viemo::watcher::Watcher;
@@ -48,29 +49,29 @@ fn main() {
         node_elements: vec![],
     });
 
-    let mut cell_memo = CellMemo::new(&store, |root, _| &root.element);
-    // let mut option_cell_memo = OptionCellMemo::new(&store, |root, _| root.elements.get(0));
-    // let mut cell_slice = CellSliceMemo::new(&store, |root, _| &root.elements);
-    // let mut node_memo = NodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| &root.node_element);
-    // let mut option_node_memo =
-    //     OptionNodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| root.node_elements.get(0));
-    // let mut owned_memo = OwnedMemo::new(&store, |root, cx| root.element.deref(cx).a);
+    let cell_memo = CellMemo::new(&store, |root, _| &root.element);
+    let mut option_cell_memo = OptionCellMemo::new(&store, |root, _| root.elements.get(0));
+    let mut cell_slice = CellSliceMemo::new(&store, |root, _| &root.elements);
+    let node_memo = NodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| &root.node_element);
+    let mut option_node_memo =
+        OptionNodeMemo::<NodeElementTC, _, _>::new(&store, |root, _| root.node_elements.get(0));
+    let owned_memo = OwnedMemo::new(&store, |root, cx| root.element.deref(cx).a);
 
-    let mut watcher = Watcher::new(&store, cell_memo, |cell, cx| {
-        println!("{}", cell.deref(cx).a);
-    });
-
-    let render = async move {
-        while let Some(_) = watcher.next().await {
-
-        }
-    };
+    // let mut watcher = Watcher::new(&store, cell_memo, |cell, cx| {
+    //     println!("{}", cell.deref(cx).a);
+    // });
+    //
+    // let render = async move {
+    //     while let Some(_) = watcher.next().await {
+    //
+    //     }
+    // };
 
     // let mut iter_memo = CellIterMemo::new(&store, |root: &MyRoot, cx| root.elements.iter());
     //
-    // let mut watcher2 = Watcher2::new(&store, cell_memo, node_memo, |(cell, node), cx| {
-    //     println!("{} {}", cell.deref(cx).a, node.deref(cx).b);
-    // });
+    let watcher = Watcher2::new(&store, cell_memo, owned_memo, |(cell, owned), cx| {
+        println!("{} {}", cell.deref(cx).a, owned);
+    });
 
     //
     // let mut watcher = Watcher2::new(&store, cell_memo, node_memo);

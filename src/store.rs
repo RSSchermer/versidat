@@ -120,6 +120,8 @@ where
         result
     }
 
+    /// Returns a stream that, once spawned, will be notified whenever an update scope for this
+    /// store ends.
     pub fn on_update(&self) -> OnUpdate {
         self.update_broadcaster.listener()
     }

@@ -1,6 +1,6 @@
 use std::marker;
 
-use crate::memo::{Memo, Refresh, MemoLifetime};
+use crate::memo::{Memo, MemoLifetime, Refresh};
 use crate::store::{ReadContext, Store};
 use crate::versioned_cell::VersionedCell;
 use crate::TypeConstructor;
@@ -30,10 +30,10 @@ where
 }
 
 impl<'a, 'b, 'store, C, S, T: 'static> MemoLifetime<'a, 'b, 'store> for CellMemo<C, S>
-    where
-        C: TypeConstructor + 'static,
-        S: Fn(&'b C::Type<'store>, ReadContext<'store>) -> &'b VersionedCell<'store, T>
-        + 'static {
+where
+    C: TypeConstructor + 'static,
+    S: Fn(&'b C::Type<'store>, ReadContext<'store>) -> &'b VersionedCell<'store, T> + 'static,
+{
     type Value = &'b VersionedCell<'store, T>;
 }
 

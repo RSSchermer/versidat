@@ -8,33 +8,35 @@ use crate::store::{ReadContext, Store};
 use crate::versioned_cell::VersionedCell;
 use crate::TypeConstructor;
 
-pub struct CellSliceMemo<C, S> {
+pub struct OptionCellSliceMemo<C, S> {
     selector: S,
     store_id: usize,
-    last_version: u64,
+    last_version: Option<u64>,
     _marker: marker::PhantomData<*const C>,
 }
 
-impl<C, S, T: 'static> CellSliceMemo<C, S>
+impl<C, S, T: 'static> OptionCellSliceMemo<C, S>
 where
     C: TypeConstructor,
     S: for<'a, 'store> Fn(
         &'a C::Type<'store>,
         ReadContext<'store>,
-    ) -> &'a [VersionedCell<'store, T>],
+    ) -> Option<&'a [VersionedCell<'store, T>]>,
 {
     pub fn new(store: &Store<C>, selector: S) -> Self {
         let last_version = store.with(|root, cx| {
-            let mut hasher = SeaHasher::new();
+            selector(root, cx).map(|slice| {
+                let mut hasher = SeaHasher::new();
 
-            for cell in selector(root, cx) {
-                cell.version().hash(&mut hasher);
-            }
+                for cell in slice {
+                    cell.version().hash(&mut hasher);
+                }
 
-            hasher.finish()
+                hasher.finish()
+            })
         });
 
-        CellSliceMemo {
+        OptionCellSliceMemo {
             selector,
             store_id: store.id(),
             last_version,
@@ -43,21 +45,22 @@ where
     }
 }
 
-impl<'a, 'b, 'store, C, S, T: 'static> MemoLifetime<'a, 'b, 'store> for CellSliceMemo<C, S>
+impl<'a, 'b, 'store, C, S, T: 'static> MemoLifetime<'a, 'b, 'store> for OptionCellSliceMemo<C, S>
 where
     C: TypeConstructor + 'static,
-    S: Fn(&'b C::Type<'store>, ReadContext<'store>) -> &'b [VersionedCell<'store, T>] + 'static,
+    S: Fn(&'b C::Type<'store>, ReadContext<'store>) -> Option<&'b [VersionedCell<'store, T>]>
+        + 'static,
 {
-    type Value = &'b [VersionedCell<'store, T>];
+    type Value = Option<&'b [VersionedCell<'store, T>]>;
 }
 
-impl<C, S, T: 'static> Memo for CellSliceMemo<C, S>
+impl<C, S, T: 'static> Memo for OptionCellSliceMemo<C, S>
 where
     C: TypeConstructor + 'static,
     S: for<'a, 'store> Fn(
             &'a C::Type<'store>,
             ReadContext<'store>,
-        ) -> &'a [VersionedCell<'store, T>]
+        ) -> Option<&'a [VersionedCell<'store, T>]>
         + 'static,
 {
     type RootTC = C;
@@ -71,20 +74,24 @@ where
         root: &'b C::Type<'store>,
         cx: ReadContext<'store>,
     ) -> Refresh<<Self as MemoLifetime<'a, 'b, 'store>>::Value> {
-        let slice = (self.selector)(root, cx);
-        let mut hasher = SeaHasher::new();
+        let option_slice = (self.selector)(root, cx);
 
-        for cell in slice {
-            cell.version().hash(&mut hasher);
-        }
+        let version = option_slice.map(|slice| {
+            let mut hasher = SeaHasher::new();
 
-        let version = hasher.finish();
+            for cell in slice {
+                cell.version().hash(&mut hasher);
+            }
+
+            hasher.finish()
+        });
+
         let last_version = self.last_version;
 
         self.last_version = version;
 
         Refresh {
-            value: slice,
+            value: option_slice,
             is_changed: version == last_version,
         }
     }

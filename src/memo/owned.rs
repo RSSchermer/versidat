@@ -1,8 +1,7 @@
 use std::marker;
 
-use crate::memo::{Memo, Refresh};
+use crate::memo::{Memo, MemoLifetime, Refresh};
 use crate::store::{ReadContext, Store};
-use crate::versioned_cell::VersionedCell;
 use crate::TypeConstructor;
 
 pub struct OwnedMemo<C, S, T> {
@@ -29,13 +28,21 @@ where
     }
 }
 
+impl<'a, 'b, 'store, C, S, T: PartialEq + 'static> MemoLifetime<'a, 'b, 'store>
+    for OwnedMemo<C, S, T>
+where
+    C: TypeConstructor + 'static,
+    S: Fn(&'b C::Type<'store>, ReadContext<'store>) -> T + 'static,
+{
+    type Value = &'a T;
+}
+
 impl<C, S, T: PartialEq + 'static> Memo for OwnedMemo<C, S, T>
 where
     C: TypeConstructor + 'static,
     S: for<'store> Fn(&C::Type<'store>, ReadContext<'store>) -> T + 'static,
 {
     type RootTC = C;
-    type Value<'a, 'b, 'store: 'b> = &'a T;
 
     fn store_id(&self) -> usize {
         self.store_id
@@ -45,7 +52,7 @@ where
         &'a mut self,
         root: &'b C::Type<'store>,
         cx: ReadContext<'store>,
-    ) -> Refresh<Self::Value<'a, 'b, 'store>> {
+    ) -> Refresh<<Self as MemoLifetime<'a, 'b, 'store>>::Value> {
         let value = (self.selector)(root, cx);
 
         let is_changed = value == self.last_value;
