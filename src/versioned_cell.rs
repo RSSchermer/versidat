@@ -34,6 +34,35 @@ impl fmt::Display for BorrowMutError {
     }
 }
 
+/// Cell that changes it's version number whenever the data inside is mutably borrowed.
+///
+/// A [VersionedCell] can only be created during a [Store] "update scope" (see [Store::update]) and
+/// can only outlive that scope by being stored as part of the store's data graph. Thus, a
+/// [VersionedCell] is tied to its store for the entirety of its lifetime. It can only be accessed
+/// through its store inside of a "read scope" (see [Store::with]) or inside of an "update scope"
+/// (see [Store::update]).
+///
+/// Can be dereferenced during a read scope with [deref]; this requires passing the read scope's
+/// [ReadContext] as proof. Dereferencing a [VersionedCell] like this incurs no additional overhead.
+///
+/// Inside of an update scope, a [VersionedCell] behaves like a [RefCell]. Its data can be borrowed
+/// with [borrow] and mutably borrowed with [borrow_mut]. Both required the update scope's
+/// [UpdateContext] as proof. Borrows are tracked:
+///
+/// - Borrowing a [VersionedCell] while a mutable borrow is life will result in a panic.
+/// - Mutably borrowing a [VersionedCell] while any other borrow is life will result in a panic.
+///
+/// See [try_borrow] and [try_borrow_mut] respectively for non-panicking alternatives.
+///
+/// Mutably borrowing the [VersionedCell] through [borrow_mut] or [try_borrow_mut] will result in
+/// it's version number changing. Note that version numbers on individual cells don't necessarily
+/// increase monotonously. Instead, a "store global" version number is maintained across the store,
+/// that is updated whenever any [VersionedCell] in the store is mutably borrowed, or when a new
+/// [VersionedCell] is created. This ensures that when a [VersionedCell] at some location in the
+/// store data-graph is replaced in its entirety by another [VersionedCell], this can be observed
+/// later as a change in the version number of the [VersionedCell] at that location in the
+/// data-graph (a new [VersionedCell] is guaranteed to never have the same version number as any
+/// prior cell in the store at any point in time).
 pub struct VersionedCell<'store, T: 'store + ?Sized> {
     // Note: don't need atomics to track the version or borrow flag, as they can only change inside
     // an update scope, which guarantees there are never sync issues.
@@ -44,6 +73,16 @@ pub struct VersionedCell<'store, T: 'store + ?Sized> {
 }
 
 impl<'store, T> VersionedCell<'store, T> {
+    /// Returns a new [VersionedCell] that contains the given `value`.
+    ///
+    /// Requires an [UpdateContext] as proof that this is called inside a "store update scope" (see
+    /// [Store::update]). The returned [VersionedCell] will be bound to the update scope to which
+    /// the [UpdateContext] belongs. It can only outlive that scope be being stored as part of that
+    /// store's data graph.
+    ///
+    /// # Example
+    ///
+    ///
     #[inline]
     pub fn new(context: UpdateContext<'store>, value: T) -> Self {
         let version = context.next_version();

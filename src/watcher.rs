@@ -15,6 +15,7 @@ where
     f: F,
     on_update: OnUpdate,
     memo: M,
+    initial: bool,
 }
 
 impl<C, M, F, O> Watcher<C, M, F>
@@ -33,6 +34,7 @@ where
             store: store.clone(),
             on_update: store.on_update(),
             memo,
+            initial: true
         }
     }
 }
@@ -51,7 +53,18 @@ where
             f,
             on_update,
             memo,
+            initial
         } = unsafe { self.get_unchecked_mut() };
+
+        if *initial {
+            *initial = false;
+
+            return store.with(|root, cx| {
+                let refreshed = memo.refresh_unchecked(root, cx);
+
+                Poll::Ready(Some(f(refreshed.value, cx)))
+            });
+        }
 
         match Pin::new(on_update).poll_next(cx) {
             Poll::Ready(Some(_)) => store.with(|root, cx| {
@@ -80,6 +93,7 @@ macro_rules! watcher {
             f: F,
             on_update: OnUpdate,
             $($memo: $memo,)*
+            initial: bool
         }
 
         #[allow(non_snake_case)]
@@ -106,6 +120,7 @@ macro_rules! watcher {
                     f,
                     store: store.clone(),
                     $($memo,)*
+                    initial: true
                 }
             }
         }
@@ -130,7 +145,18 @@ macro_rules! watcher {
                     f,
                     on_update,
                     $($memo,)*
+                    initial
                 } = unsafe { self.get_unchecked_mut() };
+
+                if *initial {
+                    *initial = false;
+
+                    return store.with(|root, cx| {
+                        $(let $memo = $memo.refresh_unchecked(root, cx);)*
+
+                        Poll::Ready(Some(f(($($memo.value),*), cx)))
+                    });
+                }
 
                 match Pin::new(on_update).poll_next(cx) {
                     Poll::Ready(Some(_)) => store.with(|root, cx| {

@@ -55,7 +55,7 @@ where
     ) -> Refresh<<Self as MemoLifetime<'a, 'b, 'store>>::Value> {
         let value = (self.selector)(root, cx);
 
-        let is_changed = value == self.last_value;
+        let is_changed = value != self.last_value;
 
         self.last_value = value;
 

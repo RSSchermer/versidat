@@ -50,6 +50,9 @@ where
     }
 }
 
+/// Observable store that can contain [VersionCell]s.
+///
+///
 pub struct Store<C>
 where
     C: TypeConstructor,
@@ -187,6 +190,8 @@ impl Drop for UpdateBroadcaster {
         })
     }
 }
+
+unsafe impl Sync for UpdateBroadcaster {}
 
 pub struct OnUpdate {
     broadcaster: Weak<Broadcaster<Mutex<Waiter>>>,

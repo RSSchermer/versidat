@@ -89,7 +89,7 @@ where
 
         Refresh {
             value: slice,
-            is_changed: version == last_version,
+            is_changed: version != last_version,
         }
     }
 }

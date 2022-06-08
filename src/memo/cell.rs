@@ -62,7 +62,7 @@ where
 
         Refresh {
             value: cell,
-            is_changed: version == last_version,
+            is_changed: version != last_version,
         }
     }
 }
