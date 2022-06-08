@@ -22,7 +22,10 @@ impl<C, M, F, O> Watcher<C, M, F>
 where
     C: TypeConstructor,
     M: Memo<RootTC = C>,
-    F: for<'a, 'b, 'store> Fn(<M as MemoLifetime<'a, 'b, 'store>>::Value, ReadContext<'store>) -> O,
+    F: for<'a, 'b, 'store> Fn(
+        <M as MemoLifetime<'a, 'b, 'store>>::Value,
+        ReadContext<'store>,
+    ) -> Option<O>,
 {
     pub fn new(store: &Store<C>, memo: M, f: F) -> Self {
         if memo.store_id() != store.id() {
@@ -34,7 +37,7 @@ where
             store: store.clone(),
             on_update: store.on_update(),
             memo,
-            initial: true
+            initial: true,
         }
     }
 }
@@ -43,7 +46,10 @@ impl<C, M, F, O> Stream for Watcher<C, M, F>
 where
     C: TypeConstructor,
     M: Memo<RootTC = C>,
-    F: for<'a, 'b, 'store> Fn(<M as MemoLifetime<'a, 'b, 'store>>::Value, ReadContext<'store>) -> O,
+    F: for<'a, 'b, 'store> Fn(
+        <M as MemoLifetime<'a, 'b, 'store>>::Value,
+        ReadContext<'store>,
+    ) -> Option<O>,
 {
     type Item = O;
 
@@ -53,7 +59,7 @@ where
             f,
             on_update,
             memo,
-            initial
+            initial,
         } = unsafe { self.get_unchecked_mut() };
 
         if *initial {
@@ -62,7 +68,7 @@ where
             return store.with(|root, cx| {
                 let refreshed = memo.refresh_unchecked(root, cx);
 
-                Poll::Ready(Some(f(refreshed.value, cx)))
+                Poll::Ready(f(refreshed.value, cx))
             });
         }
 
@@ -71,7 +77,7 @@ where
                 let refreshed = memo.refresh_unchecked(root, cx);
 
                 if refreshed.is_changed {
-                    Poll::Ready(Some(f(refreshed.value, cx)))
+                    Poll::Ready(f(refreshed.value, cx))
                 } else {
                     Poll::Pending
                 }
@@ -106,7 +112,7 @@ macro_rules! watcher {
                     $(<$memo as MemoLifetime<'a, 'b, 'store>>::Value,)*
                 ),
                 ReadContext<'store>,
-            ) -> O,
+            ) -> Option<O>,
         {
             pub fn new(store: &Store<C>, $($memo: $memo,)* f: F) -> Self {
                 $(
@@ -135,7 +141,7 @@ macro_rules! watcher {
                     $(<$memo as MemoLifetime<'a, 'b, 'store>>::Value,)*
                 ),
                 ReadContext<'store>,
-            ) -> O,
+            ) -> Option<O>,
         {
             type Item = O;
 
@@ -154,7 +160,7 @@ macro_rules! watcher {
                     return store.with(|root, cx| {
                         $(let $memo = $memo.refresh_unchecked(root, cx);)*
 
-                        Poll::Ready(Some(f(($($memo.value),*), cx)))
+                        Poll::Ready(f(($($memo.value),*), cx))
                     });
                 }
 
@@ -171,7 +177,7 @@ macro_rules! watcher {
                         )*
 
                         if is_changed {
-                            Poll::Ready(Some(f(($($memo.value),*), cx)))
+                            Poll::Ready(f(($($memo.value),*), cx))
                         } else {
                             Poll::Pending
                         }
