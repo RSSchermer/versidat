@@ -58,7 +58,7 @@ where
     C: TypeConstructor,
 {
     lock: Arc<Lock<C>>,
-    update_broadcaster: UpdateBroadcaster,
+    update_broadcaster: Arc<UpdateBroadcaster>,
 }
 
 impl<C> Store<C>
@@ -85,7 +85,7 @@ where
                 shared: RwLock::new(shared),
                 store_id,
             }),
-            update_broadcaster: UpdateBroadcaster::new(),
+            update_broadcaster: Arc::new(UpdateBroadcaster::new()),
         }
     }
 
@@ -126,7 +126,10 @@ where
     /// Returns a stream that, once spawned, will be notified whenever an update scope for this
     /// store ends.
     pub fn on_update(&self) -> OnUpdate {
-        self.update_broadcaster.listener()
+        OnUpdate {
+            broadcaster: Arc::downgrade(&self.update_broadcaster),
+            listener: None,
+        }
     }
 }
 
@@ -147,15 +150,16 @@ struct Waiter {
     waker: Option<Waker>,
 }
 
-#[derive(Clone)]
+type UpdateListener = Listener<Mutex<Waiter>>;
+
 struct UpdateBroadcaster {
-    inner: Arc<Broadcaster<Mutex<Waiter>>>,
+    inner: Broadcaster<Mutex<Waiter>>,
 }
 
 impl UpdateBroadcaster {
     fn new() -> Self {
         UpdateBroadcaster {
-            inner: Arc::new(Broadcaster::new()),
+            inner: Broadcaster::new(),
         }
     }
 
@@ -169,11 +173,11 @@ impl UpdateBroadcaster {
         })
     }
 
-    fn listener(&self) -> OnUpdate {
-        OnUpdate {
-            broadcaster: Arc::downgrade(&self.inner),
-            listener: None,
-        }
+    fn listener(&self, cx: &mut Context<'_>) -> UpdateListener {
+        self.inner.listener(Mutex::new(Waiter {
+            terminated: false,
+            waker: Some(cx.waker().clone()),
+        }))
     }
 }
 
@@ -191,10 +195,8 @@ impl Drop for UpdateBroadcaster {
     }
 }
 
-unsafe impl Sync for UpdateBroadcaster {}
-
 pub struct OnUpdate {
-    broadcaster: Weak<Broadcaster<Mutex<Waiter>>>,
+    broadcaster: Weak<UpdateBroadcaster>,
     listener: Option<Listener<Mutex<Waiter>>>,
 }
 
@@ -206,10 +208,7 @@ impl Stream for OnUpdate {
             None => {
                 // Initialize if the broad caster is still alive, or terminate immediately
                 if let Some(broadcaster) = self.broadcaster.upgrade() {
-                    self.listener = Some(broadcaster.listener(Mutex::new(Waiter {
-                        terminated: false,
-                        waker: Some(cx.waker().clone()),
-                    })));
+                    self.listener = Some(broadcaster.listener(cx));
 
                     Poll::Pending
                 } else {
@@ -221,10 +220,12 @@ impl Stream for OnUpdate {
 
                 if waiter.terminated {
                     Poll::Ready(None)
-                } else {
+                } else if waiter.waker.is_none() {
                     waiter.waker = Some(cx.waker().clone());
 
                     Poll::Ready(Some(()))
+                } else {
+                    Poll::Pending
                 }
             }
         }

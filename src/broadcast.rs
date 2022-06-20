@@ -114,3 +114,6 @@ impl<T> Broadcaster<T> {
         Listener { internal: listener }
     }
 }
+
+unsafe impl<T> Send for Broadcaster<T> {}
+unsafe impl<T> Sync for Broadcaster<T> {}
